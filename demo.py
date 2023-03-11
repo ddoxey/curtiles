@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
+"""
+Demonstration program using the CTiles ncurses interface.
+
+Author: Dylan Doxey
+Data: Feb 22, 2023
+See: https://github.com/ddoxey/curtiles
+"""
 import re
-import time
-import random
 import textwrap
 import datetime
 import subprocess
@@ -10,14 +15,15 @@ from curtiles import CTiles
 StartTime = datetime.datetime.now()
 
 def shell_command(cmd_tokens):
-    p = subprocess.run(cmd_tokens,
+    proc = subprocess.run(cmd_tokens,
                     encoding='UTF-8',
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT)
+                    stderr=subprocess.STDOUT,
+                    check=False)
     result = {
-        'status': p.returncode,
-        'stdout': p.stdout,
-        'stderr': p.stderr
+        'status': proc.returncode,
+        'stdout': proc.stdout,
+        'stderr': proc.stderr
     }
     return result
 
@@ -26,31 +32,30 @@ def make_header():
     return [f'Runtime: {runtime}']
 
 def make_calendar():
-    day = datetime.datetime.now().strftime("%d")
-    dt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cal = shell_command(['cal'])
-    lines = [f' {dt} ']
+    lines = [f' {timestamp} ']
     lines.extend(cal['stdout'].split("\n"))
     return lines
 
 def make_platform():
-    ps = shell_command(['uname', '-s', '-r', '-m', '-p', '-i', '-o'])
-    return ps['stdout'].split(" ")
+    uname = shell_command(['uname', '-s', '-r', '-m', '-p', '-i', '-o'])
+    return uname['stdout'].split(" ")
 
 
 def make_proc_list():
-    ps = shell_command(['ps', '-e'])
-    return ps['stdout'].split("\n")
+    proc_table = shell_command(['ps', '-e'])
+    return proc_table['stdout'].split("\n")
 
 
 def make_active_users():
-    ps = shell_command(['who'])
-    return ps['stdout'].split("\n")
+    who = shell_command(['who'])
+    return who['stdout'].split("\n")
 
 
 def make_fortune():
-    ps = shell_command(['fortune'])
-    lines = [l for l in ps['stdout'].split("\n") if len(l) > 0]
+    fort = shell_command(['fortune'])
+    lines = [l for l in fort['stdout'].split("\n") if len(l) > 0]
     signature = None
     if len(lines) > 1 and re.match(r'^\s+[-]', lines[-1]):
         signature = textwrap.wrap(lines.pop(), width=55)
@@ -119,6 +124,6 @@ if __name__ == '__main__':
                 'frequency': 60.0,
             },
         ]
-    }    
+    }
     ui = CTiles(conf)
     ui.run()
