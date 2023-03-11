@@ -62,42 +62,57 @@ def make_fortune():
 
 
 if __name__ == '__main__':
-    conf = [
-        {
-            'generator': make_header,
-            'geometry': {'height': 3, 'width': 45, 'ypos': 0, 'xpos': 0},
-            'frequency': 0.25,
+    conf = {
+        'style': {
+            'background': ['WHITE', 'BLUE'],
+            'title': ['BLUE', 'WHITE'],
         },
-        {
-            'title': 'CALENDAR',
-            'generator': make_calendar,
-            'geometry': {'height': 15, 'width': 24, 'ypos': 2, 'xpos': 0},
-            'frequency': 0.25,
-        },
-        {
-            'title': 'PLATFORM',
-            'generator': make_platform,
-            'geometry': {'height': 10, 'width': 24, 'ypos': 12, 'xpos': 0},
-            'frequency': 60.0,
-        },
-        {
-            'title': 'PROCESSES',
-            'generator': make_proc_list,
-            'geometry': {'height': 20, 'width': 36, 'ypos': 2, 'xpos': 25},
-            'frequency': 0.25,
-        },
-        {
-            'title': 'ACTIVE USERS',
-            'generator': make_active_users,
-            'geometry': {'height': 20, 'width': 56, 'ypos': 2, 'xpos': 64},
-            'frequency': 0.25,
-        },
-        {
-            'title': 'FORTUNE',
-            'generator': make_fortune,
-            'geometry': {'height': 5, 'width': 56, 'ypos': 25, 'xpos': 1},
-            'frequency': 60.0,
-        },
-    ]
+        'tiles': [
+            {
+                'generator': make_header,
+                'geometry': {'height': 3, 'width': 45, 'ypos': 0, 'xpos': 0},
+                'frequency': 0.25,
+                'style': {
+                    re.compile(r'[:]0[0-9][.]'): ['MAGENTA', 'BLACK', 'BOLD'],
+                },
+            },
+            {
+                'title': 'CALENDAR',
+                'generator': make_calendar,
+                'geometry': {'height': 15, 'width': 24, 'ypos': 2, 'xpos': 0},
+                'frequency': 0.25,
+                'style': {
+                    'title': ['WHITE', 'RED', 'BOLD'],
+                },
+            },
+            {
+                'title': 'PLATFORM',
+                'generator': make_platform,
+                'geometry': {'height': 10, 'width': 24, 'ypos': 12, 'xpos': 0},
+                'frequency': 60.0,
+            },
+            {
+                'title': 'PROCESSES',
+                'generator': make_proc_list,
+                'geometry': {'height': 20, 'width': 36, 'ypos': 2, 'xpos': 25},
+                'frequency': 0.25,
+                'style': {
+                    re.compile(r'00[:]00[:]00'): ['BLACK', 'YELLOW', 'BOLD'],
+                },
+            },
+            {
+                'title': 'ACTIVE USERS',
+                'generator': make_active_users,
+                'geometry': {'height': 20, 'width': 56, 'ypos': 2, 'xpos': 64},
+                'frequency': 0.25,
+            },
+            {
+                'title': 'FORTUNE',
+                'generator': make_fortune,
+                'geometry': {'height': 5, 'width': 56, 'ypos': 25, 'xpos': 1},
+                'frequency': 60.0,
+            },
+        ]
+    }    
     ui = CTiles(conf)
     ui.run()

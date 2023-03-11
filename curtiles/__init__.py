@@ -1,4 +1,5 @@
 import re
+import sys
 import time
 import curses
 import datetime
@@ -9,8 +10,74 @@ from multiprocessing import Queue
 
 class CTiles:
 
-    class Style:
-        HEADER = 1
+    class Stylist:
+        """The Stylist initializes the styling pairs in the curses environment
+           and provides a style database for later reference.
+        """
+        xlate_attr_for = {
+            'NORMAL': curses.A_NORMAL,
+            'STANDOUT': curses.A_STANDOUT,
+            'UNDERLINE': curses.A_UNDERLINE,
+            'REVERSE': curses.A_REVERSE,
+            'BLINK': curses.A_BLINK,
+            'DIM': curses.A_DIM,
+            'BOLD': curses.A_BOLD,
+            'ALTCHARSET': curses.A_ALTCHARSET,
+            'INVIS': curses.A_INVIS,
+            'PROTECT': curses.A_PROTECT,
+            'HORIZONTAL': curses.A_HORIZONTAL,
+            'LEFT': curses.A_LEFT,
+            'LOW': curses.A_LOW,
+            'RIGHT': curses.A_RIGHT,
+            'TOP': curses.A_TOP,
+            'VERTICAL': curses.A_VERTICAL,
+        }
+        xlate_color_for = {
+            'BLACK': curses.COLOR_BLACK,
+            'RED': curses.COLOR_RED,
+            'GREEN': curses.COLOR_GREEN,
+            'YELLOW': curses.COLOR_YELLOW,
+            'BLUE': curses.COLOR_BLUE,
+            'MAGENTA': curses.COLOR_MAGENTA,
+            'CYAN': curses.COLOR_CYAN,
+            'WHITE': curses.COLOR_WHITE,
+        }
+
+        def __init__(self, conf):
+            self.db = {}
+            self.index = 1
+            for key, style in conf.items():
+                colors, attr = self.translate(style)
+                curses.init_pair(self.index, *colors)
+                self.db[key] = curses.color_pair(self.index) | attr
+                self.index += 1
+
+        def merge(self, conf):
+            merged = dict(self.db)
+            for key, style in conf.items():
+                colors, attr = self.translate(style)
+                curses.init_pair(self.index, *colors)
+                merged[key] = curses.color_pair(self.index) | attr
+                self.index += 1
+            return merged
+
+        def translate(self, tokens):
+            colors = [0, 0]
+            attribute = 0
+            for i in range(2):
+                if i < len(tokens):
+                    colors[i] = self.xlate_color_for.get(tokens[i], 0)
+            if len(tokens) > 2:
+                attribute = self.xlate_attr_for.get(tokens[2], 0)
+            return colors, attribute
+
+        @classmethod
+        def is_color(self, token):
+            return token in self.xlate_color_for
+
+        @classmethod
+        def is_attr(self, token):
+            return token in self.xlate_attr_for
 
     class Worker(Thread):
         """The Worker threads will invoke the given generator function and load
@@ -41,15 +108,23 @@ class CTiles:
         def __init__(self, queue, **kwargs):
             self.lines  = []
             self.queue  = queue
-            self.title  = kwargs['title'] if 'title' in kwargs else None
+            self.title  = kwargs['title']
             self.height = kwargs['geometry']['height']
             self.width  = kwargs['geometry']['width']
             self.ypos   = kwargs['geometry']['ypos']
             self.xpos   = kwargs['geometry']['xpos']
+            self.styles = kwargs['styles']
 
         def markup_for(self, line_i, text):
-            if line_i == 0 and self.title is not None:
-                return curses.color_pair(CTiles.Style.HEADER)
+            if line_i == 0 and \
+               self.title is not None and \
+               'title' in self.styles:
+                return self.styles['title']
+            else:
+                keys = [p for p in self.styles if isinstance(p, re.Pattern)]
+                for key in keys:
+                    if re.search(key, text):
+                        return self.styles[key]
             return 0
 
         def load(self):
@@ -87,30 +162,89 @@ class CTiles:
                     except:
                         pass
 
-    def __init__(self, configs):
-        self.configs = configs
+    def __init__(self, config):
+        if not self.is_valid_(config):
+            raise Exception(f'Invalid {__class__.__name__} configuration')
+        self.style = config['style']
+        self.tiles = config['tiles']
+
+    def is_valid_(self, config):
+        if 'style' not in config:
+            config['style'] = {}
+        elif not isinstance(config['style'], dict):
+            print("config 'style' must be a dict", file=sys.stderr)
+            return False
+        if 'tiles' not in config or not isinstance(config['tiles'], list):
+            print("config 'tiles' must be a list", file=sys.stderr)
+            return False
+        def valid_style_(style):
+            result = True
+            for field in style:
+                if field not in ['background', 'title'] and \
+                   not isinstance(field, re.Pattern):
+                    print(f'Invalid style property: {field}', file=sys.stderr)
+                    result = False
+                else:
+                    for n in range(2):
+                        color = style[field][n]
+                        if not self.Stylist.is_color(color):
+                            print(f'Invalid color: {color}', file=sys.stderr)
+                            result = False
+                    if len(style[field]) > 2:
+                        attr = style[field][2]
+                        if not self.Stylist.is_attr(attr):
+                            print(f'Invalid attribute: {attr}', file=sys.stderr)
+                            result = False
+                    if len(style[field]) > 3:
+                        print(f'Too many color/attr: {field}', file=sys.stderr)
+                        result = False
+            return result
+        result = True
+        if not valid_style_(config['style']):
+            result = False
+        for n, tile in enumerate(config['tiles']):
+            if not isinstance(tile, dict):
+                print(f'tile {n} is not a dict', file=sys.stderr)
+                result = False
+                continue
+            if 'title' not in tile:
+                config['tiles'][n]['title'] = None
+                tile = config['tiles'][n]
+            if 'frequency' not in tile:
+                config['tiles'][n]['frequency'] = 1.0
+                tile = config['tiles'][n]
+            if 'style' not in tile:
+                config['tiles'][n]['style'] = {}
+                tile = config['tiles'][n]
+            if tile['title'] is not None and not isinstance(tile['title'], str):
+                print(f'tile {n} title is not a str', file=sys.stderr)
+                result = False
+            if not isinstance(tile['frequency'], float):
+                print(f'tile {n} frequency is not a float', file=sys.stderr)
+                result = False
+            if not valid_style_(tile['style']):
+                print(f'tile {n} has invalid style', file=sys.stderr)
+                result = False
+        return result
 
     def __call__(self, terminal):
 
         queues, workers, panels = [], [], []
 
-        for config in self.configs:
+        stylist = self.Stylist(self.style)
 
-            if 'title' not in config:
-                config['title'] = None
-
-            if 'frequency' not in config:
-                config['frequency'] = 1.0
+        for tile in self.tiles:
 
             queues.append(Queue(1))
 
             workers.append(self.Worker(queues[-1],
-                                       generator = config['generator'],
-                                       frequency = config['frequency']))
+                                       generator = tile['generator'],
+                                       frequency = tile['frequency']))
 
             panels.append(self.Panel(queues[-1],
-                                     title    = config['title'],
-                                     geometry = config['geometry']))
+                                     title    = tile['title'],
+                                     geometry = tile['geometry'],
+                                     styles   = stylist.merge(tile['style'])))
 
         for worker in workers:
             worker.start()
@@ -121,8 +255,10 @@ class CTiles:
             curses.curs_set(0)
             if curses.has_colors():
                 curses.start_color()
-                curses.use_default_colors()
-                curses.init_pair(CTiles.Style.HEADER, curses.COLOR_BLUE, -1)
+                if 'background' in stylist.db:
+                    terminal.bkgd(stylist.db['background'])
+                else:
+                    curses.use_default_colors()
         except Exception:
             pass
 
