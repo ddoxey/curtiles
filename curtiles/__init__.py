@@ -3,12 +3,16 @@ import sys
 import time
 import curses
 import datetime
+from queue import Queue
 from curses import wrapper
 from threading import Thread
-from multiprocessing import Queue
 
 
 class CTiles:
+
+    class Command:
+        QUIT        = ord('Q')
+        TOGGLE_HALT = ord(' ')
 
     class Stylist:
         """The Stylist initializes the styling pairs in the curses environment
@@ -61,6 +65,16 @@ class CTiles:
                 self.index += 1
             return merged
 
+        def update(self, action):
+            for key in action:
+                for trait in action[key]:
+                    if isinstance(action[key][trait], list):
+                        colors, attr = self.translate(action[key][trait])
+                        curses.init_pair(self.index, *colors)
+                        action[key][trait] = curses.color_pair(self.index) | attr
+                        self.index += 1
+            return action
+
         def translate(self, tokens):
             colors = [0, 0]
             attribute = 0
@@ -89,10 +103,11 @@ class CTiles:
             self.queue     = queue
             self.generator = generator
             self.frequency = float(frequency)
+            self.stopped   = False
 
         def run(self):
             """Text generator event loop populates the Queue."""
-            while True:
+            while not self.stopped:
                 try:
                     if not self.queue.empty():
                         self.queue.get()
@@ -100,6 +115,10 @@ class CTiles:
                     return
                 self.queue.put(self.generator())
                 time.sleep(self.frequency)
+            self.queue.join()
+
+        def stop(self):
+            self.stopped = True
 
     class Panel:
         """The Panel represents a region on the terminal and maintains the
@@ -114,6 +133,7 @@ class CTiles:
             self.ypos   = kwargs['geometry']['ypos']
             self.xpos   = kwargs['geometry']['xpos']
             self.styles = kwargs['styles']
+            self.action = kwargs['action']
 
         def markup_for(self, line_i, text):
             if line_i == 0 and \
@@ -138,6 +158,11 @@ class CTiles:
                 if self.title is not None:
                     self.lines.append(self.title)
                 self.lines.extend(lines)
+            if self.action is not None:
+                for key, result in self.action.items():
+                    if any([re.search(key, line) for line in self.lines]):
+                        return result
+            return None
 
         def update(self, terminal):
             max_y, max_x = terminal.getmaxyx()
@@ -216,8 +241,14 @@ class CTiles:
             if 'style' not in tile:
                 config['tiles'][n]['style'] = {}
                 tile = config['tiles'][n]
+            if 'action' not in tile:
+                config['tiles'][n]['action'] = {}
+                tile = config['tiles'][n]
             if tile['title'] is not None and not isinstance(tile['title'], str):
                 print(f'tile {n} title is not a str', file=sys.stderr)
+                result = False
+            if not isinstance(tile['action'], dict):
+                print(f'tile {n} action is not a dict', file=sys.stderr)
                 result = False
             if not isinstance(tile['frequency'], float):
                 print(f'tile {n} frequency is not a float', file=sys.stderr)
@@ -225,6 +256,11 @@ class CTiles:
             if not valid_style_(tile['style']):
                 print(f'tile {n} has invalid style', file=sys.stderr)
                 result = False
+            for field in tile:
+                if field not in ['title', 'frequency',
+                                 'style', 'generator', 'geometry', 'action']:
+                    print(f'Invalid tile {n} field: {field}', file=sys.stderr)
+                    result = False
         return result
 
     def __call__(self, terminal):
@@ -244,7 +280,8 @@ class CTiles:
             panels.append(self.Panel(queues[-1],
                                      title    = tile['title'],
                                      geometry = tile['geometry'],
-                                     styles   = stylist.merge(tile['style'])))
+                                     styles   = stylist.merge(tile['style']),
+                                     action   = stylist.update(tile['action'])))
 
         for worker in workers:
             worker.start()
@@ -263,19 +300,36 @@ class CTiles:
             pass
 
         terminal.clear()
+        terminal.nodelay(1)
 
         try:
+            paused = False
             while True:
-                for panel in panels:
-                    panel.load()
-                for panel in panels:
-                    panel.update(terminal)
-                terminal.refresh()
+                if not paused:
+                    for panel in panels:
+                        action = panel.load()
+                        if action is not None:
+                            if 'background' in action:
+                                terminal.bkgd(action['background'])
+                            if 'halt' in action:
+                                paused = True
+                    for panel in panels:
+                        panel.update(terminal)
+                    terminal.refresh()
+                key_char = terminal.getch()
+                if key_char == self.Command.QUIT:
+                    break
+                elif key_char == self.Command.TOGGLE_HALT:
+                    if paused:
+                        paused = False
+                        terminal.bkgd(stylist.db['background'])
+                    else:
+                        paused = True
         except(KeyboardInterrupt):
-            for queue in queues:
-                queue.close()
+            return
+        finally:
             for worker in workers:
-                worker.join()
+                worker.stop()
 
     def run(self):
         wrapper(self)

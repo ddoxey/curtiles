@@ -75,6 +75,12 @@ if __name__ == '__main__':
                 'style': {
                     re.compile(r'[:]0[0-9][.]'): ['MAGENTA', 'BLACK', 'BOLD'],
                 },
+                'action': {
+                    re.compile(r'[:]10[.]'): {
+                        'background': ['BLACK', 'YELLOW', 'BOLD'],
+                        'halt': True,
+                    }
+                }
             },
             {
                 'title': 'CALENDAR',
