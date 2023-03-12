@@ -82,7 +82,7 @@ if __name__ == '__main__':
                 },
                 'action': {
                     re.compile(r'[:]10[.]'): {
-                        'background': ['BLACK', 'YELLOW', 'BOLD'],
+                        'background': ['WHITE', 'LIME'],
                         'halt': True,
                     }
                 }
@@ -116,6 +116,9 @@ if __name__ == '__main__':
                 'generator': make_active_users,
                 'geometry': {'height': 20, 'width': 56, 'ypos': 2, 'xpos': 64},
                 'frequency': 0.25,
+                'style': {
+                    'title': ['WHITE', 'FUCHSIA'],
+                },
             },
             {
                 'title': 'FORTUNE',

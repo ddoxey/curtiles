@@ -64,10 +64,23 @@ class CTiles:
             'CYAN': curses.COLOR_CYAN,
             'WHITE': curses.COLOR_WHITE,
         }
+        extended_color_rgb = {
+            'MAROON': [128, 0, 0],
+            'OLIVE': [128, 128, 0],
+            'NAVY': [0, 0, 128],
+            'PURPLE': [128, 0, 128],
+            'TEAL': [0, 128, 128],
+            'SILVER': [192, 192, 192],
+            'GREY': [128, 128, 128],
+            'LIME': [0, 255, 0],
+            'FUCHSIA': [255, 0, 255],
+            'AQUA': [0, 255, 255],
+        }
 
         def __init__(self, conf):
             self.database = {}
             self.index = 1
+            self.register_extended_colors()
             for key, style in conf.items():
                 colors, attr = self.translate(style)
                 curses.init_pair(self.index, *colors)
@@ -113,10 +126,17 @@ class CTiles:
                 attribute = self.xlate_attr_for.get(tokens[2], 0)
             return colors, attribute
 
+        def register_extended_colors(self):
+            ndex = 1 + max(self.xlate_color_for.values())
+            for color, rgb in self.extended_color_rgb.items():
+                curses.init_color(ndex, *rgb)
+                self.xlate_color_for[color] = ndex
+                ndex += 1
+
         @classmethod
         def is_color(cls, token):
             """Verifies that a given string token is a recognized ncurses color."""
-            return token in cls.xlate_color_for
+            return token in cls.xlate_color_for or token in cls.extended_color_rgb
 
         @classmethod
         def is_attr(cls, token):
