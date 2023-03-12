@@ -80,7 +80,7 @@ class CTiles:
         def __init__(self, conf):
             self.database = {}
             self.index = 1
-            self.register_extended_colors()
+            self.init_extended_colors()
             for key, style in conf.items():
                 colors, attr = self.translate(style)
                 curses.init_pair(self.index, *colors)
@@ -126,7 +126,8 @@ class CTiles:
                 attribute = self.xlate_attr_for.get(tokens[2], 0)
             return colors, attribute
 
-        def register_extended_colors(self):
+        def init_extended_colors(self):
+            """Initialize extended (8+) colors with curses."""
             ndex = 1 + max(self.xlate_color_for.values())
             for color, rgb in self.extended_color_rgb.items():
                 curses.init_color(ndex, *rgb)
@@ -154,10 +155,14 @@ class CTiles:
             self.generator = generator
             self.frequency = float(frequency)
             self.stopped   = False
+            self.paused    = False
 
         def run(self):
             """Text generator event loop populates the Queue."""
             while not self.stopped:
+                if self.paused:
+                    time.sleep(1)
+                    continue
                 if not self.queue.empty():
                     self.queue.get()
                 self.queue.put(self.generator())
@@ -167,6 +172,10 @@ class CTiles:
         def stop(self):
             """Set the stopped flag to cause the run loop to exit."""
             self.stopped = True
+
+        def toggle(self):
+            """Set the paused flag to cause the run loop to do nothing."""
+            self.paused = not self.paused
 
     class Panel:
         """The Panel represents a region on the terminal and maintains the
@@ -179,9 +188,12 @@ class CTiles:
             self.geometry = kwargs['geometry']
             self.styles   = kwargs['styles']
             self.action   = kwargs['action']
+            self.memory   = None
 
         def markup_for(self, line_i, text):
             """Get the ncurses markup for the given text appearing on the given line number."""
+            if len(text.strip()) == 0:
+                return 0
             if line_i == 0 and \
                self.title is not None and \
                'title' in self.styles:
@@ -194,6 +206,8 @@ class CTiles:
 
         def load(self):
             """Load new lines from the queue."""
+            if self.memory is not None:
+                return None
             lines = []
             try:
                 lines = self.queue.get_nowait()
@@ -209,6 +223,17 @@ class CTiles:
                     if any(re.search(key, line) for line in self.lines):
                         return result
             return None
+
+        def toggle(self, terminal):
+            """Toggles the hidden/inactive state."""
+            if self.memory is None:
+                self.memory = self.lines
+                self.lines = [' '] * self.geometry['height']
+            else:
+                self.lines = self.memory
+                self.memory = None
+                self.load()
+            self.update(terminal)
 
         def update(self, terminal):
             """Update the text on the ncurses terminal with the stored line data."""
@@ -238,6 +263,28 @@ class CTiles:
             raise AssertionError(f'Invalid {__class__.__name__} configuration')
         self.style = config['style']
         self.tiles = config['tiles']
+
+    @classmethod
+    def valid_toggle_(cls, toggle):
+        """Validate the 'toggle' configuration element."""
+        if not isinstance(toggle, dict):
+            print('toggle is not a dict', file=sys.stderr)
+            return False
+        result = True
+        if 'key' in toggle:
+            if not isinstance(toggle['key'], str) or len(toggle['key']) != 1:
+                print("toggle 'key' is not a one character str", file=sys.stderr)
+                result = False
+        if 'active' not in toggle:
+            toggle['active'] = True
+        elif not isinstance(toggle['active'], bool):
+            print("toggle 'active' is not a bool", file=sys.stderr)
+            result = False
+        for field in toggle:
+            if field not in ['key', 'active']:
+                print(f'Invalid toggle field: {field}', file=sys.stderr)
+                result = False
+        return result
 
     @classmethod
     def valid_style_(cls, style):
@@ -345,6 +392,9 @@ class CTiles:
             if 'title' not in tile:
                 config['tiles'][ndex]['title'] = None
                 tile = config['tiles'][ndex]
+            if 'toggle' not in tile:
+                config['tiles'][ndex]['toggle'] = {'key': None, 'active': True}
+                tile = config['tiles'][ndex]
             if 'frequency' not in tile:
                 config['tiles'][ndex]['frequency'] = 1.0
                 tile = config['tiles'][ndex]
@@ -360,6 +410,9 @@ class CTiles:
             if not isinstance(tile['frequency'], float):
                 print(f'tile {ndex} frequency is not a float', file=sys.stderr)
                 result = False
+            if not self.valid_toggle_(tile['toggle']):
+                print(f'tile {ndex} has invalid toggle', file=sys.stderr)
+                result = False
             if not self.valid_style_(tile['style']):
                 print(f'tile {ndex} has invalid style', file=sys.stderr)
                 result = False
@@ -368,15 +421,20 @@ class CTiles:
                 result = False
 
             for field in tile:
-                if field not in ['title', 'frequency',
+                if field not in ['title', 'toggle', 'frequency',
                                  'style', 'generator', 'geometry', 'action']:
                     print(f'Invalid tile {ndex} field: {field}', file=sys.stderr)
                     result = False
         return result
 
+    def arrange(self, panels):
+        """Update the xpos/ypos attributes of the panels
+           to arrange them on the screen.
+        """
+
     def __call__(self, terminal):
 
-        queues, workers, panels = [], [], []
+        queues, workers, panels, togglers = [], [], [], {}
 
         stylist = self.Stylist(self.style)
 
@@ -394,6 +452,9 @@ class CTiles:
                                      styles   = stylist.merge(tile['style']),
                                      action   = stylist.update(tile['action'])))
 
+            if tile['toggle']['key'] is not None:
+                togglers[ord(tile['toggle']['key'])] = len(panels) - 1
+
         for worker in workers:
             worker.start()
 
@@ -410,8 +471,9 @@ class CTiles:
         terminal.clear()
         terminal.nodelay(1)
 
+        paused = False
+        self.arrange(panels)
         try:
-            paused = False
             while True:
                 if not paused:
                     for panel in panels:
@@ -425,6 +487,8 @@ class CTiles:
                         panel.update(terminal)
                     terminal.refresh()
                 key_char = terminal.getch()
+                if key_char == -1:
+                    continue
                 if key_char == self.Command.QUIT:
                     break
                 if key_char == self.Command.TOGGLE_HALT:
@@ -433,6 +497,12 @@ class CTiles:
                         terminal.bkgd(stylist.database['background'])
                     else:
                         paused = True
+                    continue
+                if key_char in togglers:
+                    ndex = togglers[key_char]
+                    workers[ndex].toggle()
+                    panels[ndex].toggle(terminal)
+                    self.arrange(panels)
         except KeyboardInterrupt:
             return
         finally:
