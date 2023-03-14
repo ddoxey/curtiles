@@ -76,7 +76,7 @@ if __name__ == '__main__':
             {
                 'toggle': { 'key': 'h' },
                 'generator': make_header,
-                'geometry': {'height': 2, 'width': 45, 'ypos': 0, 'xpos': 0},
+                'geometry': {'height': 2, 'width': 128},
                 'frequency': 0.25,
                 'style': {
                     re.compile(r'[:]0[0-9][.]'): ['MAGENTA', 'BLACK', 'BOLD'],
@@ -92,7 +92,7 @@ if __name__ == '__main__':
                 'title': 'CALENDAR',
                 'toggle': { 'key': 'c' },
                 'generator': make_calendar,
-                'geometry': {'height': 15, 'width': 24, 'ypos': 2, 'xpos': 0},
+                'geometry': {'height': 15, 'width': 24},
                 'frequency': 0.25,
                 'style': {
                     'title': ['WHITE', 'RED', 'BOLD'],
@@ -102,14 +102,14 @@ if __name__ == '__main__':
                 'title': 'PLATFORM',
                 'toggle': { 'key': 'l' },
                 'generator': make_platform,
-                'geometry': {'height': 10, 'width': 24, 'ypos': 12, 'xpos': 0},
+                'geometry': {'height': 10, 'width': 24},
                 'frequency': 60.0,
             },
             {
                 'title': 'PROCESSES',
                 'toggle': { 'key': 'p' },
                 'generator': make_proc_list,
-                'geometry': {'height': 20, 'width': 36, 'ypos': 2, 'xpos': 25},
+                'geometry': {'height': 20, 'width': 36},
                 'frequency': 0.25,
                 'style': {
                     re.compile(r'00[:]00[:]00'): ['BLACK', 'YELLOW', 'BOLD'],
@@ -119,7 +119,7 @@ if __name__ == '__main__':
                 'title': 'ACTIVE USERS',
                 'toggle': { 'key': 'u' },
                 'generator': make_active_users,
-                'geometry': {'height': 20, 'width': 56, 'ypos': 2, 'xpos': 64},
+                'geometry': {'height': 20, 'width': 56},
                 'frequency': 0.25,
                 'style': {
                     'title': ['WHITE', 'FUCHSIA'],
@@ -129,7 +129,7 @@ if __name__ == '__main__':
                 'title': 'FORTUNE',
                 'toggle': { 'key': 'f', 'active': False },
                 'generator': make_fortune,
-                'geometry': {'height': 5, 'width': 56, 'ypos': 25, 'xpos': 1},
+                'geometry': {'height': 5, 'width': 56},
                 'frequency': 60.0,
             },
         ]
