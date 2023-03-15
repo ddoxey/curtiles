@@ -377,16 +377,17 @@ class CTiles:
            text to be added.
         """
         def __init__(self, queue, **kwargs):
-            self.lines    = []
-            self.queue    = queue
-            self.title    = kwargs['title']
-            self.geometry = kwargs['geometry']
-            self.styles   = kwargs['styles']
-            self.action   = kwargs['action']
+            self.lines      = []
+            self.queue      = queue
+            self.title      = kwargs['title']
+            self.toggle_key = kwargs['toggle_key']
+            self.geometry   = kwargs['geometry']
+            self.styles     = kwargs['styles']
+            self.action     = kwargs['action']
+            self.memory     = None
+            self.loaded     = False
             self.geometry['ypos'] = 0
             self.geometry['xpos'] = 0
-            self.memory   = None
-            self.loaded   = False
 
         def __str__(self):
             return f'({self.title})' \
@@ -487,6 +488,11 @@ class CTiles:
                         line = re.sub(r'\s', " ", self.lines[y_offset])
                     if len(line) < max_x_length:
                         line += ' ' * (max_x_length - len(line))
+                    if y_offset == 0 and \
+                       self.title is not None and \
+                       self.toggle_key is not None and \
+                       len(line) >= 3 + len(self.title):
+                        line = line[0:-3] + f'[{self.toggle_key}]'
                     args = [
                         self.geometry['ypos'] + y_offset,
                         self.geometry['xpos'],
@@ -706,10 +712,11 @@ class CTiles:
                                        frequency = tile['frequency']))
 
             panels.append(self.Panel(queues[-1],
-                                     title    = tile['title'],
-                                     geometry = tile['geometry'],
-                                     styles   = stylist.merge(tile['style']),
-                                     action   = stylist.update(tile['action'])))
+                                     title      = tile['title'],
+                                     geometry   = tile['geometry'],
+                                     toggle_key = tile['toggle']['key'],
+                                     styles     = stylist.merge(tile['style']),
+                                     action     = stylist.update(tile['action'])))
 
             if tile['toggle']['key'] is not None:
                 togglers[ord(tile['toggle']['key'])] = len(panels) - 1
