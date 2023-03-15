@@ -14,14 +14,10 @@ import re
 import sys
 import time
 import curses
-import logging
 import datetime
-from queue import Queue, Empty as EmptyQueue
-from curses import wrapper
 from threading import Thread
-
-logging.basicConfig(filename='/tmp/curtiles.log',
-                    level=logging.DEBUG)
+from queue import Queue, Empty as EmptyQueue
+from curses import wrapper, ERR as CursesErr
 
 
 class CTiles:
@@ -45,7 +41,6 @@ class CTiles:
             self.data = [[0 for x in range(width)] for y in range(height)]
             self.height = height
             self.width = width
-            logging.debug(f'Grid({height},{width})')
 
         def __str__(self):
             lines = ['+' + ('-' * (1 + self.width * 2)) + '+']
@@ -71,7 +66,6 @@ class CTiles:
                 c_end = c_index + panel.width + 1
                 c_index = max(c_index, 0)
                 collisions = sum(self.data[r_index][c_index:c_end])
-                logging.debug(f'inquire: {panel.title} {r_index},{c_index}:{c_end}: {collisions}')
                 if collisions > 0:
                     return None
                 overhang = (panel.width + 1) - len(self.data[r_index][c_index:])
@@ -89,7 +83,6 @@ class CTiles:
                     if loss is not None:
                         positions.append({'ypos': row, 'xpos': col, 'loss': loss})
                         if loss == 0:
-                            logging.debug(f'search: {panel.title} {row},{col}: {loss}')
                             break
                 if len(positions) > 0 and positions[-1]['loss'] == 0:
                     break
@@ -100,7 +93,6 @@ class CTiles:
 
         def reserve(self, panel):
             """Reserve a spot on the grid for the panel."""
-            logging.debug(f'reserve: {panel}')
             for row in range(panel.ypos, panel.ypos + panel.height):
                 for col in range(panel.xpos, panel.xpos + panel.width):
                     if row < len(self.data) and col < len(self.data[row]):
@@ -391,7 +383,10 @@ class CTiles:
             self.geometry = kwargs['geometry']
             self.styles   = kwargs['styles']
             self.action   = kwargs['action']
+            self.geometry['ypos'] = 0
+            self.geometry['xpos'] = 0
             self.memory   = None
+            self.loaded   = False
 
         def __str__(self):
             return f'({self.title})' \
@@ -453,6 +448,7 @@ class CTiles:
                 lines = self.queue.get_nowait()
             except EmptyQueue:
                 return None
+            self.loaded = True
             if len(lines) > 0:
                 self.lines = []
                 if self.title is not None:
@@ -469,21 +465,19 @@ class CTiles:
             if self.memory is None:
                 self.memory = self.lines
                 self.lines = [' '] * self.geometry['height']
-                logging.debug(f'toggled off: {self}')
             else:
                 self.lines = self.memory
                 self.memory = None
                 self.load()
-                logging.debug(f'toggled on: {self}')
             self.update(terminal)
 
         def update(self, terminal):
             """Update the text on the ncurses terminal with the stored line data."""
             max_y, max_x = terminal.getmaxyx()
             max_y_offset = min(self.geometry['ypos'] + self.geometry['height'],
-                               max_y - self.geometry['ypos'])
+                               max_y - self.geometry['ypos'] - 1)
             max_x_length = min(self.geometry['width'],
-                               max_x - self.geometry['xpos'])
+                               max_x - self.geometry['xpos'] - 1)
             if max_y_offset > 0 and max_x_length > 0:
                 for y_offset in range(self.geometry['height']):
                     if y_offset > max_y_offset:
@@ -493,18 +487,31 @@ class CTiles:
                         line = re.sub(r'\s', " ", self.lines[y_offset])
                     if len(line) < max_x_length:
                         line += ' ' * (max_x_length - len(line))
-                    terminal.addnstr(
+                    args = [
                         self.geometry['ypos'] + y_offset,
                         self.geometry['xpos'],
                         line[0:max_x_length],
                         max_x_length,
-                        self.markup_for(y_offset, line))
+                        self.markup_for(y_offset, line)
+                    ]
+                    terminal.addnstr(*args)
 
     def __init__(self, config):
         if not self.is_valid_(config):
             raise AssertionError(f'Invalid {__class__.__name__} configuration')
         self.style = config['style']
         self.tiles = config['tiles']
+        self.current_height = 0
+        self.current_width = 0
+
+    def screen_size_changed(self, terminal):
+        is_changed = False
+        height, width = terminal.getmaxyx()
+        if self.current_height != height or self.current_width != width:
+            is_changed = True
+            self.current_height = height
+            self.current_width = width
+        return is_changed
 
     @classmethod
     def valid_toggle_(cls, toggle):
@@ -677,10 +684,12 @@ class CTiles:
         grid = self.Grid(height, width)
         for panel in [p for p in panels if p.visible]:
             location = grid.search(panel)
+            if panel.loaded:
+                panel.toggle(terminal)
             panel.position(location['ypos'], location['xpos'])
-            logging.debug(f'positioned: {panel}')
+            if panel.loaded:
+                panel.toggle(terminal)
             grid.reserve(panel)
-            logging.debug(f'arranged:\n{grid}')
 
     def __call__(self, terminal):
 
@@ -737,6 +746,8 @@ class CTiles:
                                 break
                     for panel in panels:
                         panel.update(terminal)
+                    if self.screen_size_changed(terminal):
+                        self.arrange(terminal, panels)
                     terminal.refresh()
                 key_char = terminal.getch()
                 if key_char == -1:
@@ -750,16 +761,16 @@ class CTiles:
                     else:
                         paused = True
                     continue
-                if key_char in togglers:
-                    ndex = togglers[key_char]
-                    workers[ndex].toggle()
-                    panels[ndex].toggle(terminal)
-                    self.arrange(terminal, panels)
+                if not paused:
+                    if key_char in togglers:
+                        ndex = togglers[key_char]
+                        workers[ndex].toggle()
+                        panels[ndex].toggle(terminal)
+                        self.arrange(terminal, panels)
         except KeyboardInterrupt:
             return
         finally:
             for worker in workers:
-                logging.debug('stoping worker')
                 worker.stop()
 
     def run(self):
