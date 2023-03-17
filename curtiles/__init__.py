@@ -49,37 +49,37 @@ class CTiles:
             lines.append(lines[0])
             return "\n".join(lines)
 
-        def inquire(self, ypos, xpos, panel):
-            """Inquire if a given panel can fit at the proposed y/x position.
+        def inquire(self, ypos, xpos, slab):
+            """Inquire if a given Tile can fit at the proposed y/x position.
                Return None if the answer is no, or a loss score greater than
-               zero if the panel would overlap the edges of the screen.
+               zero if the Tile would overlap the edges of the screen.
             """
             loss = 0
-            for row in range(0, panel.height + 1):
+            for row in range(0, slab.height + 1):
                 r_index = row + ypos - 1
                 if r_index < 0:
                     continue
                 if r_index >= len(self.data):
-                    loss += panel.width
+                    loss += slab.width
                     continue
                 c_index = xpos - 1
-                c_end = c_index + panel.width + 1
+                c_end = c_index + slab.width + 1
                 c_index = max(c_index, 0)
                 collisions = sum(self.data[r_index][c_index:c_end])
                 if collisions > 0:
                     return None
-                overhang = (panel.width + 1) - len(self.data[r_index][c_index:])
+                overhang = (slab.width + 1) - len(self.data[r_index][c_index:])
                 loss += max(0, overhang)
             return loss
 
-        def search(self, panel):
-            """Search for the nearest available place to position the panel by
+        def search(self, slab):
+            """Search for the nearest available place to position the Tile by
                scanning from left to right and top to bottom.
             """
             positions = []
             for row in range(self.height):
                 for col in range(self.width):
-                    loss = self.inquire(row, col, panel)
+                    loss = self.inquire(row, col, slab)
                     if loss is not None:
                         positions.append({'ypos': row, 'xpos': col, 'loss': loss})
                         if loss == 0:
@@ -91,10 +91,10 @@ class CTiles:
                 return sorted(positions, key=lambda c: c['loss'])[0]
             return None
 
-        def reserve(self, panel):
-            """Reserve a spot on the grid for the panel."""
-            for row in range(panel.ypos, panel.ypos + panel.height):
-                for col in range(panel.xpos, panel.xpos + panel.width):
+        def reserve(self, slab):
+            """Reserve a spot on the grid for the Tile."""
+            for row in range(slab.ypos, slab.ypos + slab.height):
+                for col in range(slab.xpos, slab.xpos + slab.width):
                     if row < len(self.data) and col < len(self.data[row]):
                         if self.data[row][col] > 0:
                             raise AssertionError(f'{row},{col} is already reserved')
@@ -372,8 +372,8 @@ class CTiles:
             """Set the paused flag to cause the run loop to do nothing."""
             self.paused = not self.paused
 
-    class Panel:
-        """The Panel represents a region on the terminal and maintains the
+    class Tile:
+        """The Tile represents a region on the terminal and maintains the
            text to be added.
         """
         def __init__(self, queue, **kwargs):
@@ -416,13 +416,14 @@ class CTiles:
 
         @property
         def visible(self):
-            """Boolean indicates that panel is currently enabled."""
+            """Boolean indicates that Tile is currently enabled."""
             return self.memory is None
 
         def position(self, ypos, xpos):
-            """Position the panel at the given y/x coordinates."""
-            self.geometry['ypos'] = ypos
-            self.geometry['xpos'] = xpos
+            """Position the Tile at the given y/x coordinates."""
+            if self.geometry['ypos'] != ypos or self.geometry['xpos'] != xpos:
+                self.geometry['ypos'] = ypos
+                self.geometry['xpos'] = xpos
 
         def markup_for(self, line_i, text):
             """Get the ncurses markup for the given text appearing on the
@@ -465,14 +466,15 @@ class CTiles:
 
         def toggle(self, terminal):
             """Toggles the hidden/inactive state."""
-            if self.memory is None:
-                self.memory = self.lines
-                self.lines = [' '] * self.geometry['height']
-            else:
-                self.lines = self.memory
-                self.memory = None
-                self.load()
-            self.update(terminal)
+            if self.loaded:
+                if self.memory is None:
+                    self.memory = self.lines
+                    self.lines = [' '] * self.geometry['height']
+                else:
+                    self.lines = self.memory
+                    self.memory = None
+                    self.load()
+                self.update(terminal)
 
         def update(self, terminal):
             """Update the text on the ncurses terminal with the stored line data."""
@@ -491,9 +493,10 @@ class CTiles:
                     if len(line) < max_x_length:
                         line += ' ' * (max_x_length - len(line))
                     if y_offset == 0 and \
-                       self.title is not None and \
-                       self.toggle_key is not None and \
-                       len(line) >= 3 + len(self.title):
+                        self.memory is None and \
+                        self.title is not None and \
+                        self.toggle_key is not None and \
+                        len(line) >= 3 + len(self.title):
                         line = line[0:-3] + f'[{self.toggle_key}]'
                     args = [
                         self.geometry['ypos'] + y_offset,
@@ -513,6 +516,7 @@ class CTiles:
         self.current_width = 0
 
     def screen_size_changed(self, terminal):
+        """Determine if the terminal screen size has changed."""
         is_changed = False
         height, width = terminal.getmaxyx()
         if self.current_height != height or self.current_width != width:
@@ -684,26 +688,24 @@ class CTiles:
                     result = False
         return result
 
-    def arrange(self, terminal, panels):
-        """Update the xpos/ypos attributes of the panels
+    def arrange(self, terminal, slabs):
+        """Update the xpos/ypos attributes of the Tiles
            to arrange them on the screen.
         """
         height, width = terminal.getmaxyx()
         grid = self.Grid(height, width)
-        for panel in [p for p in panels if p.visible]:
-            location = grid.search(panel)
+        for slab in [p for p in slabs if p.visible]:
+            location = grid.search(slab)
             if location is None:
                 continue
-            if panel.loaded:
-                panel.toggle(terminal)
-            panel.position(location['ypos'], location['xpos'])
-            if panel.loaded:
-                panel.toggle(terminal)
-            grid.reserve(panel)
+            slab.toggle(terminal)
+            slab.position(location['ypos'], location['xpos'])
+            slab.toggle(terminal)
+            grid.reserve(slab)
 
     def __call__(self, terminal):
 
-        queues, workers, panels, togglers = [], [], [], {}
+        queues, workers, slabs, togglers = [], [], [], {}
 
         stylist = self.Stylist(self.style)
 
@@ -715,7 +717,7 @@ class CTiles:
                                        generator = tile['generator'],
                                        frequency = tile['frequency']))
 
-            panels.append(self.Panel(queues[-1],
+            slabs.append(self.Tile(queues[-1],
                                      title      = tile['title'],
                                      geometry   = tile['geometry'],
                                      toggle_key = tile['toggle']['key'],
@@ -723,7 +725,7 @@ class CTiles:
                                      action     = stylist.update(tile['action'])))
 
             if tile['toggle']['key'] is not None:
-                togglers[ord(tile['toggle']['key'])] = len(panels) - 1
+                togglers[ord(tile['toggle']['key'])] = len(slabs) - 1
 
         for worker in workers:
             worker.start()
@@ -742,12 +744,12 @@ class CTiles:
         terminal.nodelay(1)
 
         paused = False
-        self.arrange(terminal, panels)
+        self.arrange(terminal, slabs)
         try:
             while True:
                 if not paused:
-                    for panel in panels:
-                        action = panel.load()
+                    for slab in slabs:
+                        action = slab.load()
                         if action is not None:
                             if 'background' in action:
                                 terminal.bkgd(action['background'])
@@ -755,10 +757,11 @@ class CTiles:
                                 paused = True
                             if 'exit' in action:
                                 break
-                    for panel in panels:
-                        panel.update(terminal)
+                    for slab in slabs:
+                        slab.update(terminal)
                     if self.screen_size_changed(terminal):
-                        self.arrange(terminal, panels)
+                        self.arrange(terminal, slabs)
+                        terminal.bkgd(stylist.database['background'])
                     terminal.refresh()
                 key_char = terminal.getch()
                 if key_char == -1:
@@ -776,8 +779,9 @@ class CTiles:
                     if key_char in togglers:
                         ndex = togglers[key_char]
                         workers[ndex].toggle()
-                        panels[ndex].toggle(terminal)
-                        self.arrange(terminal, panels)
+                        slabs[ndex].toggle(terminal)
+                        self.arrange(terminal, slabs)
+                        terminal.bkgd(stylist.database['background'])
         except KeyboardInterrupt:
             return
         finally:
