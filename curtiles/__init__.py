@@ -438,6 +438,8 @@ class CTiles:
             for key in keys:
                 if re.search(key, text):
                     return self.styles[key]
+            if 'body' in self.styles:
+                return self.styles['body']
             return 0
 
         def load(self):
@@ -526,7 +528,7 @@ class CTiles:
             print('toggle is not a dict', file=sys.stderr)
             return False
         result = True
-        if 'key' in toggle:
+        if 'key' in toggle and toggle['key'] is not None:
             if not isinstance(toggle['key'], str) or len(toggle['key']) != 1:
                 print("toggle 'key' is not a one character str", file=sys.stderr)
                 result = False
@@ -546,7 +548,7 @@ class CTiles:
         """Validate the 'style' configuration element."""
         result = True
         for field in style:
-            if field not in ['background', 'title'] and \
+            if field not in ['background', 'title', 'body'] and \
                 not isinstance(field, re.Pattern):
                 print(f'Invalid style property: {field}', file=sys.stderr)
                 result = False
@@ -690,6 +692,8 @@ class CTiles:
         grid = self.Grid(height, width)
         for panel in [p for p in panels if p.visible]:
             location = grid.search(panel)
+            if location is None:
+                continue
             if panel.loaded:
                 panel.toggle(terminal)
             panel.position(location['ypos'], location['xpos'])
