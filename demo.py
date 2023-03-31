@@ -71,6 +71,7 @@ if __name__ == '__main__':
         'style': {
             'background': ['WHITE', 'BLUE'],
             'title': ['BLUE', 'WHITE'],
+            'border': True,
         },
         'tiles': [
             {
@@ -80,6 +81,7 @@ if __name__ == '__main__':
                 'frequency': 0.25,
                 'style': {
                     re.compile(r'[:]0[0-9][.]'): ['MAGENTA', 'BLACK', 'BOLD'],
+                    'border': True,
                 },
                 'action': {
                     re.compile(r'[:]10[.]'): {

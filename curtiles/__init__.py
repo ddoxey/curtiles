@@ -104,6 +104,24 @@ class CTiles:
         """The Stylist initializes the styling pairs in the curses environment
            and provides a style database for later reference.
         """
+        border_char_for = {
+            'double': {
+                'horz': 0x2550,
+                'vert': 0x2551,
+                'tl': 0x2554,
+                'tr': 0x2557,
+                'br': 0x255D,
+                'bl': 0x255A,
+            },
+            'single': {
+                'horz': 0x2500,
+                'vert': 0x2502,
+                'tl': 0x256D,
+                'tr': 0x256E,
+                'br': 0x2570,
+                'bl': 0x256A,
+            },
+        }
         xlate_attr_for = {
             'NORMAL': curses.A_NORMAL,
             'STANDOUT': curses.A_STANDOUT,
@@ -277,10 +295,11 @@ class CTiles:
             self.index = 1
             self.init_extended_colors()
             for key, style in conf.items():
-                colors, attr = self.translate(style)
-                curses.init_pair(self.index, *colors)
-                self.database[key] = curses.color_pair(self.index) | attr
-                self.index += 1
+                if isinstance(style, list):
+                    colors, attr = self.translate(style)
+                    curses.init_pair(self.index, *colors)
+                    self.database[key] = curses.color_pair(self.index) | attr
+                    self.index += 1
 
         def merge(self, conf):
             """Merges provides color/attribute styling config with existing mappings.
@@ -288,10 +307,11 @@ class CTiles:
             """
             merged = dict(self.database)
             for key, style in conf.items():
-                colors, attr = self.translate(style)
-                curses.init_pair(self.index, *colors)
-                merged[key] = curses.color_pair(self.index) | attr
-                self.index += 1
+                if isinstance(style, list):
+                    colors, attr = self.translate(style)
+                    curses.init_pair(self.index, *colors)
+                    merged[key] = curses.color_pair(self.index) | attr
+                    self.index += 1
             return merged
 
         def update(self, action):
@@ -552,10 +572,14 @@ class CTiles:
         """Validate the 'style' configuration element."""
         result = True
         for field in style:
-            if field not in ['background', 'title', 'body'] and \
+            if field not in ['background', 'border', 'title', 'body'] and \
                 not isinstance(field, re.Pattern):
                 print(f'Invalid style property: {field}', file=sys.stderr)
                 result = False
+            elif field == 'border':
+                if not isinstance(style[field], bool):
+                    print(f'Style property {field} must be a bool', file=sys.stderr)
+                    result = False
             elif len(style[field]) < 2:
                 print(f'{field} must have at least 2 colors', file=sys.stderr)
                 result = False
