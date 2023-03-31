@@ -345,7 +345,10 @@ class CTiles:
             """Initialize extended (8+) colors with curses."""
             ndex = 1 + max(self.xlate_color_for.values())
             for color, rgb in self.x11_color_rgb.items():
-                curses.init_color(ndex, *rgb)
+                try:
+                    curses.init_color(ndex, *rgb)
+                except:
+                    continue
                 self.xlate_color_for[color] = ndex
                 ndex += 1
 
@@ -455,7 +458,7 @@ class CTiles:
                self.title is not None and \
                'title' in self.styles:
                 return self.styles['title']
-            keys = [p for p in self.styles if isinstance(p, re.Pattern)]
+            keys = [p for p in self.styles if hasattr(p, 'search')]
             for key in keys:
                 if re.search(key, text):
                     return self.styles[key]
@@ -573,7 +576,7 @@ class CTiles:
         result = True
         for field in style:
             if field not in ['background', 'border', 'title', 'body'] and \
-                not isinstance(field, re.Pattern):
+                not hasattr(field, 'search'):
                 print(f'Invalid style property: {field}', file=sys.stderr)
                 result = False
             elif field == 'border':
@@ -607,7 +610,7 @@ class CTiles:
             return False
         result = True
         for pattern in action:
-            if not isinstance(pattern, re.Pattern):
+            if not hasattr(pattern, 'search'):
                 print('action has non-re.Pattern key', file=sys.stderr)
                 result = False
                 continue
