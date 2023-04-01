@@ -19,7 +19,6 @@ from threading import Thread
 from queue import Queue, Empty as EmptyQueue
 from curses import wrapper, ERR as CursesErr
 
-
 class CTiles:
     """CTiles provides a configuration driven framework
        for making a "tiled" ncurses UI.
@@ -37,15 +36,25 @@ class CTiles:
            real estate and can automatically arrange the tiles from left
            to right and top to bottom.
         """
-        def __init__(self, height, width):
+        def __init__(self, height, width, border=False):
             self.data = [[0 for x in range(width)] for y in range(height)]
+            self.has_border = border
             self.height = height
             self.width = width
+            if self.has_border:
+                self.height -= 2
+                self.width -= 2
 
         def __str__(self):
             lines = ['+' + ('-' * (1 + self.width * 2)) + '+']
+            b = ""
+            if self.has_border:
+                b = " "
+                lines.append('|{} {} {}|'.format(b, " " * self.width, b))
             for row in self.data:
-                lines.append('| {} |'.format(" ".join([str(c) for c in row])))
+                lines.append('|{} {} {}|'.format(b, " ".join([str(c) for c in row]), b))
+            if self.has_border:
+                lines.append(lines[1])
             lines.append(lines[0])
             return "\n".join(lines)
 
@@ -55,7 +64,7 @@ class CTiles:
                zero if the Tile would overlap the edges of the screen.
             """
             loss = 0
-            for row in range(0, slab.height + 1):
+            for row in range(0, slab.height + 0):
                 r_index = row + ypos - 1
                 if r_index < 0:
                     continue
@@ -63,7 +72,7 @@ class CTiles:
                     loss += slab.width
                     continue
                 c_index = xpos - 1
-                c_end = c_index + slab.width + 1
+                c_end = c_index + slab.width
                 c_index = max(c_index, 0)
                 collisions = sum(self.data[r_index][c_index:c_end])
                 if collisions > 0:
@@ -76,12 +85,15 @@ class CTiles:
             """Search for the nearest available place to position the Tile by
                scanning from left to right and top to bottom.
             """
+            border_offset = 1 if self.has_border else 0
             positions = []
             for row in range(self.height):
                 for col in range(self.width):
                     loss = self.inquire(row, col, slab)
                     if loss is not None:
-                        positions.append({'ypos': row, 'xpos': col, 'loss': loss})
+                        positions.append({'ypos': row + border_offset,
+                                          'xpos': col + border_offset,
+                                          'loss': loss})
                         if loss == 0:
                             break
                 if len(positions) > 0 and positions[-1]['loss'] == 0:
@@ -116,10 +128,12 @@ class CTiles:
             'single': {
                 'horz': 0x2500,
                 'vert': 0x2502,
+                'ltee': 0x251C,
+                'rtee': 0x2524,
                 'tl': 0x256D,
                 'tr': 0x256E,
-                'br': 0x2570,
-                'bl': 0x256A,
+                'br': 0x256F,
+                'bl': 0x2570,
             },
         }
         xlate_attr_for = {
@@ -312,6 +326,8 @@ class CTiles:
                     curses.init_pair(self.index, *colors)
                     merged[key] = curses.color_pair(self.index) | attr
                     self.index += 1
+                else:
+                    merged[key] = conf[key]
             return merged
 
         def update(self, action):
@@ -361,6 +377,11 @@ class CTiles:
         def is_attr(cls, token):
             """Verifies that a given string token is a recognized ncurses attribute."""
             return token in cls.xlate_attr_for
+
+        @classmethod
+        def border_chrs(cls, names, mode='single'):
+            """Returns the box-art characters for either double or single."""
+            return {n: chr(cls.border_char_for[mode][n]) for n in names}
 
     class Worker(Thread):
         """The Worker threads will invoke the given generator function and load
@@ -416,6 +437,11 @@ class CTiles:
             return f'({self.title})' \
                    f'[{self.ypos}+{self.height},' \
                    f'{self.xpos}+{self.width}]'
+
+        @property
+        def has_border(self):
+            """Boolean indicates border is on."""
+            return self.styles['border']
 
         @property
         def height(self):
@@ -499,36 +525,103 @@ class CTiles:
                     self.load()
                 self.update(terminal)
 
+        def draw_background(self, terminal, min_y, max_y, min_x, max_x_length):
+            """Update the text on the ncurses terminal painting the background for this tile."""
+            if self.has_border:
+                char = CTiles.Stylist.border_chrs(['tl','horz','vert','tr','rtee','br','bl','ltee'])
+                horizontal = char["horz"] * (max_x_length - 2)
+                blank = " " * (max_x_length - 2)
+                first_line = f'{char["tl"]}{horizontal}{char["tr"]}'
+                title_line = f'{char["ltee"]}{horizontal}{char["rtee"]}'
+                middle_line = f'{char["vert"]}{blank}{char["vert"]}'
+                last_line = f'{char["bl"]}{horizontal}{char["br"]}'
+                try:
+                    terminal.addnstr(
+                        min_y,
+                        self.geometry['xpos'],
+                        first_line,
+                        max_x_length)
+                    for line_i, line_y in enumerate(range(min_y + 1, max_y)):
+                        line = title_line if line_i == 1 else middle_line
+                        terminal.addnstr(
+                            line_y,
+                            self.geometry['xpos'],
+                            line,
+                            max_x_length)
+                    terminal.addnstr(
+                        max_y,
+                        self.geometry['xpos'],
+                        last_line,
+                        max_x_length)
+                except:
+                    return False
+            else:
+                blank_line = " " * max_x_length
+                try:
+                    for line_y in range(min_y, max_y + 1):
+                        terminal.addnstr(
+                            line_y,
+                            self.geometry['xpos'],
+                            blank_line,
+                            max_x_length)
+                except:
+                    return False
+            return True
+
         def update(self, terminal):
             """Update the text on the ncurses terminal with the stored line data."""
-            max_y, max_x = terminal.getmaxyx()
-            max_y_offset = min(self.geometry['ypos'] + self.geometry['height'],
-                               max_y - self.geometry['ypos'] - 1)
-            max_x_length = min(self.geometry['width'],
-                               max_x - self.geometry['xpos'] - 1)
-            if max_y_offset > 0 and max_x_length > 0:
-                for y_offset in range(self.geometry['height']):
-                    if y_offset > max_y_offset:
-                        break
-                    line = ' '
-                    if y_offset < len(self.lines):
-                        line = re.sub(r'\s', " ", self.lines[y_offset])
-                    if len(line) < max_x_length:
-                        line += ' ' * (max_x_length - len(line))
-                    if y_offset == 0 and \
-                        self.memory is None and \
-                        self.title is not None and \
-                        self.toggle_key is not None and \
-                        len(line) >= 3 + len(self.title):
-                        line = line[0:-3] + f'[{self.toggle_key}]'
-                    args = [
-                        self.geometry['ypos'] + y_offset,
-                        self.geometry['xpos'],
-                        line[0:max_x_length],
-                        max_x_length,
-                        self.markup_for(y_offset, line)
-                    ]
+            absolute_max_y, absolute_max_x = terminal.getmaxyx()
+            absolute_max_y -= 2  # status bar
+            absolute_max_x -= 1  # border
+
+            min_y, min_x = self.geometry['ypos'], self.geometry['xpos']
+
+            max_y = min(self.geometry['ypos'] + self.geometry['height'] - 1, absolute_max_y)
+            max_x_length = min(self.geometry['width'], absolute_max_x - self.geometry['xpos'])
+
+            if not self.draw_background(terminal, min_y, max_y, min_x, max_x_length):
+                return
+
+            line_i_offset = 0
+            if self.has_border:
+                min_y, min_x = min_y + 1, min_x + 1
+                line_i_offset, border_cost = 0, 2
+                max_y -= 1
+                max_x_length -= 2
+
+            if max_x_length == 0:
+                return
+
+            if min_y > max_y:
+                return
+
+            for line_i, line_y in enumerate(range(min_y, max_y + 1)):
+                line = '.'
+                if line_i == 1 and self.title is not None and self.has_border:
+                    line_i_offset -= 1
+                    continue
+                line_i += line_i_offset
+                if line_i < len(self.lines):
+                    line = re.sub(r'\s', " ", self.lines[line_i])
+                line += ' ' * (max_x_length - len(line))
+                # line = line.replace(' ', '.')
+                if line_i == 0 and \
+                   self.memory is None and \
+                   self.title is not None and \
+                   self.toggle_key is not None and \
+                   len(line) >= 3 + len(self.title):
+                    line = line[0:-3] + f'[{self.toggle_key}]'
+                args = [
+                    line_y,
+                    min_x,
+                    line[0:max_x_length],
+                    max_x_length,
+                    self.markup_for(line_i, line)
+                ]
+                try:
                     terminal.addnstr(*args)
+                except:
+                    pass
 
     def __init__(self, config):
         if not self.is_valid_(config):
@@ -574,6 +667,8 @@ class CTiles:
     def valid_style_(cls, style):
         """Validate the 'style' configuration element."""
         result = True
+        if 'border' not in style:
+            style['border'] = False
         for field in style:
             if field not in ['background', 'border', 'title', 'body'] and \
                 not hasattr(field, 'search'):
@@ -715,12 +810,30 @@ class CTiles:
                     result = False
         return result
 
+    def draw_background(self, terminal):
+        height, width = terminal.getmaxyx()
+        if self.style['border']:
+            char = CTiles.Stylist.border_chrs(['horz','vert', 'tl','tr','br','bl'], 'double')
+            first_line = char['tl'] + (char['horz'] * (width - 2)) + char['tr']
+            middle_line = char['vert'] + (" " * (width - 2)) + char['vert']
+            last_line = char['bl'] + (char['horz'] * (width - 2)) + char['br']
+            terminal.addnstr(0, 0, first_line, len(first_line))
+            for line_y in range(1, height - 2):
+                terminal.addnstr(line_y, 0, middle_line, width)
+            terminal.addnstr(height - 2, 0, last_line, len(last_line))
+        else:
+            blank_line = " " * width
+            for line_y in range(height - 1):
+                terminal.addnstr(line_y, 0, blank_line, width)
+            terminal.addnstr(height - 1, 0, blank_line, width - 1)
+
+
     def arrange(self, terminal, slabs):
         """Update the xpos/ypos attributes of the Tiles
            to arrange them on the screen.
         """
         height, width = terminal.getmaxyx()
-        grid = self.Grid(height, width)
+        grid = self.Grid(height, width, self.style['border'])
         for slab in [p for p in slabs if p.visible]:
             location = grid.search(slab)
             if location is None:
@@ -745,11 +858,11 @@ class CTiles:
                                        frequency = tile['frequency']))
 
             slabs.append(self.Tile(queues[-1],
-                                     title      = tile['title'],
-                                     geometry   = tile['geometry'],
-                                     toggle_key = tile['toggle']['key'],
-                                     styles     = stylist.merge(tile['style']),
-                                     action     = stylist.update(tile['action'])))
+                                   title      = tile['title'],
+                                   geometry   = tile['geometry'],
+                                   toggle_key = tile['toggle']['key'],
+                                   styles     = stylist.merge(tile['style']),
+                                   action     = stylist.update(tile['action'])))
 
             if tile['toggle']['key'] is not None:
                 togglers[ord(tile['toggle']['key'])] = len(slabs) - 1
@@ -771,6 +884,7 @@ class CTiles:
         terminal.nodelay(1)
 
         paused = False
+        self.draw_background(terminal)
         self.arrange(terminal, slabs)
         try:
             while True:
@@ -787,6 +901,7 @@ class CTiles:
                     for slab in slabs:
                         slab.update(terminal)
                     if self.screen_size_changed(terminal):
+                        self.draw_background(terminal)
                         self.arrange(terminal, slabs)
                         terminal.bkgd(stylist.database['background'])
                     terminal.refresh()
@@ -807,6 +922,7 @@ class CTiles:
                         ndex = togglers[key_char]
                         workers[ndex].toggle()
                         slabs[ndex].toggle(terminal)
+                        self.draw_background(terminal)
                         self.arrange(terminal, slabs)
                         terminal.bkgd(stylist.database['background'])
         except KeyboardInterrupt:

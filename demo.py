@@ -77,7 +77,7 @@ if __name__ == '__main__':
             {
                 'toggle': { 'key': 'h' },
                 'generator': make_header,
-                'geometry': {'height': 2, 'width': 128},
+                'geometry': {'height': 3, 'width': 148},
                 'frequency': 0.25,
                 'style': {
                     re.compile(r'[:]0[0-9][.]'): ['MAGENTA', 'BLACK', 'BOLD'],
@@ -94,10 +94,11 @@ if __name__ == '__main__':
                 'title': 'CALENDAR',
                 'toggle': { 'key': 'c' },
                 'generator': make_calendar,
-                'geometry': {'height': 15, 'width': 24},
+                'geometry': {'height': 13, 'width': 22},
                 'frequency': 0.25,
                 'style': {
                     'title': ['WHITE', 'RED', 'BOLD'],
+                    'border': True,
                 },
             },
             {
@@ -121,10 +122,11 @@ if __name__ == '__main__':
                 'title': 'ACTIVE USERS',
                 'toggle': { 'key': 'u' },
                 'generator': make_active_users,
-                'geometry': {'height': 20, 'width': 56},
+                'geometry': {'height': 10, 'width': 56},
                 'frequency': 0.25,
                 'style': {
                     'title': ['WHITE', 'FUCHSIA'],
+                    'border': False,
                 },
             },
             {
