@@ -64,21 +64,19 @@ class CTiles:
                zero if the Tile would overlap the edges of the screen.
             """
             loss = 0
-            for row in range(0, slab.height + 0):
-                r_index = row + ypos - 1
-                if r_index < 0:
-                    continue
+            for row in range(slab.height):
+                r_index = row + ypos
                 if r_index >= len(self.data):
                     loss += slab.width
                     continue
-                c_index = xpos - 1
+                c_index = xpos
                 c_end = c_index + slab.width
                 c_index = max(c_index, 0)
                 collisions = sum(self.data[r_index][c_index:c_end])
                 if collisions > 0:
                     return None
-                overhang = (slab.width + 1) - len(self.data[r_index][c_index:])
-                loss += max(0, overhang)
+                overhang = slab.width - len(self.data[r_index][c_index:])
+                loss += overhang
             return loss
 
         def search(self, slab):
@@ -98,7 +96,6 @@ class CTiles:
                             break
                 if len(positions) > 0 and positions[-1]['loss'] == 0:
                     break
-
             if len(positions) > 0:
                 return sorted(positions, key=lambda c: c['loss'])[0]
             return None
@@ -571,7 +568,7 @@ class CTiles:
         def update(self, terminal):
             """Update the text on the ncurses terminal with the stored line data."""
             absolute_max_y, absolute_max_x = terminal.getmaxyx()
-            absolute_max_y -= 2  # status bar
+            absolute_max_y -= 3  # status bar
             absolute_max_x -= 1  # border
 
             min_y, min_x = self.geometry['ypos'], self.geometry['xpos']
@@ -604,7 +601,6 @@ class CTiles:
                 if line_i < len(self.lines):
                     line = re.sub(r'\s', " ", self.lines[line_i])
                 line += ' ' * (max_x_length - len(line))
-                # line = line.replace(' ', '.')
                 if line_i == 0 and \
                    self.memory is None and \
                    self.title is not None and \
@@ -821,6 +817,7 @@ class CTiles:
             for line_y in range(1, height - 2):
                 terminal.addnstr(line_y, 0, middle_line, width)
             terminal.addnstr(height - 2, 0, last_line, len(last_line))
+            terminal.addnstr(height - 1, 0, " " * (width - 1), width - 1)
         else:
             blank_line = " " * width
             for line_y in range(height - 1):
@@ -835,10 +832,10 @@ class CTiles:
         height, width = terminal.getmaxyx()
         grid = self.Grid(height, width, self.style['border'])
         for slab in [p for p in slabs if p.visible]:
+            slab.toggle(terminal)
             location = grid.search(slab)
             if location is None:
                 continue
-            slab.toggle(terminal)
             slab.position(location['ypos'], location['xpos'])
             slab.toggle(terminal)
             grid.reserve(slab)
