@@ -429,6 +429,9 @@ class CTiles:
             self.loaded     = False
             self.geometry['ypos'] = 0
             self.geometry['xpos'] = 0
+            if self.has_border:
+                self.geometry['height'] += 2
+                self.geometry['width'] += 2
 
         def __str__(self):
             return f'({self.title})' \
@@ -593,7 +596,7 @@ class CTiles:
                 return
 
             for line_i, line_y in enumerate(range(min_y, max_y + 1)):
-                line = '.'
+                line = ' '
                 if line_i == 1 and self.title is not None and self.has_border:
                     line_i_offset -= 1
                     continue
@@ -745,6 +748,12 @@ class CTiles:
                         print(f'action {pattern} {key} must be a boolean',
                                 file=sys.stderr)
                         result = False
+                elif key == 'status':
+                    if not isinstance(action[pattern][key], str) and \
+                       not hasattr(action[pattern][key], '__call__'):
+                        print(f'action {pattern} {key} must be either a string or a function',
+                                file=sys.stderr)
+                        result = False
                 else:
                     print(f'action {pattern} unrecognized key: {key}',
                             file=sys.stderr)
@@ -824,6 +833,16 @@ class CTiles:
                 terminal.addnstr(line_y, 0, blank_line, width)
             terminal.addnstr(height - 1, 0, blank_line, width - 1)
 
+    def set_status(self, terminal, status):
+        height, width = terminal.getmaxyx()
+        message = ""
+        if isinstance(status, str):
+            message = status
+        else:
+            lines = status()
+            message = ", ".join(lines)
+        message += ' ' * (width - len(message))
+        terminal.addnstr(height - 1, 0, message, width - 1)
 
     def arrange(self, terminal, slabs):
         """Update the xpos/ypos attributes of the Tiles
@@ -880,21 +899,27 @@ class CTiles:
         terminal.clear()
         terminal.nodelay(1)
 
-        paused = False
+        running, paused = True, False
         self.draw_background(terminal)
         self.arrange(terminal, slabs)
         try:
-            while True:
+            while running:
                 if not paused:
                     for slab in slabs:
                         action = slab.load()
                         if action is not None:
                             if 'background' in action:
                                 terminal.bkgd(action['background'])
+                            if 'status' in action:
+                                self.set_status(terminal, action['status'])
                             if 'halt' in action:
-                                paused = True
-                            if 'exit' in action:
+                                running, paused = True, True
                                 break
+                            if 'exit' in action:
+                                running, paused = False, False
+                                break
+                    if not running:
+                        break
                     for slab in slabs:
                         slab.update(terminal)
                     if self.screen_size_changed(terminal):

@@ -27,6 +27,10 @@ def shell_command(cmd_tokens):
     }
     return result
 
+def time_of_day():
+    now = datetime.datetime.now()
+    return [f'Today: {now.strftime("%Y-%m-%d %H:%M:%S")}']
+
 def make_header():
     runtime = datetime.datetime.now() - StartTime
     return [f'Runtime: {runtime}']
@@ -34,7 +38,7 @@ def make_header():
 def make_calendar():
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cal = shell_command(['cal'])
-    lines = [f' {timestamp} ']
+    lines = [f'{timestamp}']
     lines.extend(cal['stdout'].split("\n"))
     return lines
 
@@ -77,15 +81,16 @@ if __name__ == '__main__':
             {
                 'toggle': { 'key': 'h' },
                 'generator': make_header,
-                'geometry': {'height': 3, 'width': 148},
+                'geometry': {'height': 1, 'width': 148},
                 'frequency': 0.25,
                 'style': {
                     re.compile(r'[:]0[0-9][.]'): ['MAGENTA', 'BLACK', 'BOLD'],
-                    'border': True,
+                    'border': False,
                 },
                 'action': {
                     re.compile(r'[:]10[.]'): {
                         'background': ['WHITE', 'LIME'],
+                        'status': 'PAUSED',
                         'halt': True,
                     }
                 }
@@ -94,19 +99,27 @@ if __name__ == '__main__':
                 'title': 'CALENDAR',
                 'toggle': { 'key': 'c' },
                 'generator': make_calendar,
-                'geometry': {'height': 13, 'width': 22},
+                'geometry': {'height': 11, 'width': 22},
                 'frequency': 0.25,
                 'style': {
-                    'title': ['WHITE', 'RED', 'BOLD'],
+                    'title': ['WHITE', 'BLUE', 'BOLD'],
                     'border': True,
                 },
+                'action': {
+                    re.compile(r'.'): {
+                        'status': time_of_day,
+                    }
+                }
             },
             {
                 'title': 'PLATFORM',
                 'toggle': { 'key': 'l' },
                 'generator': make_platform,
-                'geometry': {'height': 10, 'width': 24},
+                'geometry': {'height': 11, 'width': 24},
                 'frequency': 60.0,
+                'style': {
+                    'border': True,
+                },
             },
             {
                 'title': 'PROCESSES',
@@ -122,7 +135,7 @@ if __name__ == '__main__':
                 'title': 'ACTIVE USERS',
                 'toggle': { 'key': 'u' },
                 'generator': make_active_users,
-                'geometry': {'height': 10, 'width': 56},
+                'geometry': {'height': 10, 'width': 51},
                 'frequency': 0.25,
                 'style': {
                     'title': ['WHITE', 'FUCHSIA'],
