@@ -37,4 +37,4 @@ if __name__ == '__main__':
 ```
 
 This sample program demonstrates `CTiles` program with one tile that displays the current time, with bold white text on a blue background.
-The CTiles constructor accepts a dict with a `style` key and a `tiles` key.
+The `CTiles` constructor accepts a dict with a `style` key and a `tiles` key.
